@@ -94,6 +94,7 @@ class Attendance(Document):
 			frappe.throw(_("Cannot mark attendance for an Inactive employee {0}").format(self.employee))
 
 	def check_leave_record(self):
+		#***************************************************  HUSAM 2023-08-14 **********************************
 		leave_record = frappe.db.sql(
 			"""
 			select leave_type, half_day, half_day_date
@@ -102,10 +103,12 @@ class Attendance(Document):
 				and %s between from_date and to_date
 				and status = 'Approved'
 				and docstatus = 1
+				and (duty_resumption_date is null or duty_resumption_date > %s);
 		""",
-			(self.employee, self.attendance_date),
+			(self.employee, self.attendance_date, self.attendance_date), # ******** ADDED 3RD PARAMETER FOR DUTY RESUMPTION 2023-08-14 ******
 			as_dict=True,
 		)
+		#***************************************************  HUSAM 2023-08-14 **********************************
 		if leave_record:
 			for d in leave_record:
 				self.leave_type = d.leave_type

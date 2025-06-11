@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.model.mapper import get_mapped_doc
 from frappe.query_builder.functions import Sum
-from frappe.utils import cstr, flt, get_link_to_form
+from frappe.utils import cstr, flt, get_link_to_form, today # ADDED today 2023-09-06 HUSAM ***************************
 
 import erpnext
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
@@ -88,6 +88,7 @@ class ExpenseClaim(AccountsController):
 			self.payable_account = frappe.get_cached_value(
 				"Company", self.company, "default_expense_claim_payable_account"
 			)
+			frappe.errprint(frappe.get_cached_value("Company", self.company, "default_expense_claim_payable_account"))
 
 	def set_cost_center(self):
 		if not self.cost_center:
@@ -141,22 +142,103 @@ class ExpenseClaim(AccountsController):
 		if flt(self.total_sanctioned_amount) > 0:
 			gl_entries = self.get_gl_entries()
 			make_gl_entries(gl_entries, cancel)
+# ***************  ADDED BY HUSAM 2023-09-06 FOR INTER-COMPANY CREDIT CARD ENTRIES *********************
+			if self.credit_card and self.company != "National Engineering Services & Trading Co LLC":
+				self.make_inter_company_gl_entries()
+# ***************  ADDED BY HUSAM 2023-09-06 FOR INTER-COMPANY CREDIT CARD ENTRIES *********************
+
+# ***************  ADDED BY HUSAM 2023-09-06 FOR INTER-COMPANY CREDIT CARD ENTRIES *********************
+	def make_inter_company_gl_entries(self):
+		if self.company == "NEST Employment Services LLC":
+			naming_series = "NEE-JV.YY./.####"
+			debit_account = "1010104001 - EIB Credit Card 5558284376783051 - NEES"
+			credit_account = "2010103003 - National Engineering Services & Trading Co - NEES"
+			nest_debit_account = "1010206001 - NEST Employment Services - NE"
+			nest_credit_account = "1010104001 - EIB CC 5558280000680002 - NE"
+			cost_center = "Main - NEES"
+			comp = "NEST ES"
+		if self.company == "Firmo Technical Petroleum Services LLC":
+			naming_series = "FIRMO-JV.YY./.####"
+			debit_account = "1010104001 - EIB Credit Card-5558284376783051 - FIR"
+			credit_account = "2010103001 - National Engineering Services & Trading Co - FIR"
+			nest_debit_account = "1010206002 - Firmo - NE"
+			nest_credit_account = "1010104001 - EIB CC 5558280000680002 - NE"
+			cost_center = "Main - FIR"
+			comp = "FIRMO"
+
+		# ***** NEES OR FIRMO JV *********
+		jv = frappe.new_doc("Journal Entry")
+		jv.company = self.company
+		jv.naming_series = naming_series
+		jv.posting_date = today()
+		jv.title = "Credit Card Inter-Company JV: " + str(self.name)
+		jv.voucher_type = "Journal Entry"
+		jv.append("accounts",{
+				"account": debit_account,
+				"debit_in_account_currency": self.total_sanctioned_amount,
+				"cost_center":cost_center,
+				"against_voucher_type": self.doctype,
+				"against_voucher": self.name
+				})		
+		jv.append("accounts",{
+				"account": credit_account,
+				"credit_in_account_currency": self.total_sanctioned_amount,
+				"cost_center":cost_center,
+				"against_voucher_type": self.doctype,
+				"against_voucher": self.name
+				})
+		jv.save(ignore_permissions=True)
+		jv.submit()
+
+		# ***** NEST JV *********
+		jv = frappe.new_doc("Journal Entry")
+		jv.company = "National Engineering Services & Trading Co LLC"
+		jv.posting_date = today()
+		jv.title = comp + " Credit Card Inter-Company JV: " + str(self.name)
+		jv.naming_series = "JV.YY./.####"
+		jv.voucher_type = "Journal Entry"
+		cost_center = "Main - NE"
+		jv.append("accounts",{
+				"account": nest_debit_account,
+				"debit_in_account_currency": self.total_sanctioned_amount,
+				"cost_center":cost_center,
+				"against_voucher_type": self.doctype,
+				"against_voucher": self.name
+				})		
+		jv.append("accounts",{
+				"account": nest_credit_account,
+				"credit_in_account_currency": self.total_sanctioned_amount,
+				"cost_center":cost_center,
+				"against_voucher_type": self.doctype,
+				"against_voucher": self.name
+				})
+		jv.save(ignore_permissions=True)
+		jv.submit()
+# ***************  ADDED BY HUSAM 2023-09-06 FOR INTER-COMPANY CREDIT CARD ENTRIES *********************
 
 	def get_gl_entries(self):
 		gl_entry = []
 		self.validate_account_details()
-
+		default_vat_account = frappe.db.get_value('Purchase Taxes and Charges', {'parent':frappe.db.get_value('Purchase Taxes and Charges Template', {'is_default': 1, 'company': self.company}, 'name')}, 'account_head')
+		#frappe.errprint('default_vat_account: ' + default_vat_account)
 		# payable entry
+		# ************* HUSAM 2023-09-07 TO REMOVE EMPLOYEE IF CREDIT CARD ****************************
+		party_type = ""
+		party = ""
+		if not self.credit_card:
+			party_type = "Employee"
+			party = self.employee
+		# ************* HUSAM 2023-09-07 TO REMOVE EMPLOYEE IF CREDIT CARD ****************************		
 		if self.grand_total:
 			gl_entry.append(
 				self.get_gl_dict(
 					{
 						"account": self.payable_account,
-						"credit": self.grand_total,
-						"credit_in_account_currency": self.grand_total,
+						"credit": self.total_sanctioned_amount, #self.grand_total,
+						"credit_in_account_currency": self.total_sanctioned_amount, #self.grand_total,
 						"against": ",".join([d.default_account for d in self.expenses]),
-						"party_type": "Employee",
-						"party": self.employee,
+						"party_type": party_type,
+						"party": party,
 						"against_voucher_type": self.doctype,
 						"against_voucher": self.name,
 						"cost_center": self.cost_center,
@@ -171,14 +253,36 @@ class ExpenseClaim(AccountsController):
 				self.get_gl_dict(
 					{
 						"account": data.default_account,
-						"debit": data.sanctioned_amount,
-						"debit_in_account_currency": data.sanctioned_amount,
-						"against": self.employee,
+						"debit": data.sanctioned_amount - data.vat, #data.sanctioned_amount #*** HUSAM 2023-08-13
+						"debit_in_account_currency": data.sanctioned_amount - data.vat, #data.sanctioned_amount, #*** HUSAM 2023-08-13
+						"party_type": "Employee",
+						"party": data.employee,
+						"against": self.payable_account, #self.employee, # *********** Husam 2023-08-14 ***************
 						"cost_center": data.cost_center or self.cost_center,
 					},
 					item=data,
 				)
 			)
+
+		# ************************ VAT Amount entry HUSAM 2023-08-13 *************************
+		if self.total_vat:
+			gl_entry.append(
+				self.get_gl_dict(
+					{
+						"account": default_vat_account, 
+						"debit": self.total_vat,
+						"debit_in_account_currency": self.total_vat,
+						"against": ",".join([d.default_account for d in self.expenses]),
+						"party_type": party_type,
+						"party": party,
+						"against_voucher_type": self.doctype,
+						"against_voucher": self.name,
+						"cost_center": self.cost_center, 
+					},
+					item=self,
+				)
+			)
+		# ************************ VAT Amount entry HUSAM 2023-08-13 *************************
 
 		for data in self.advances:
 			gl_entry.append(
@@ -264,29 +368,44 @@ class ExpenseClaim(AccountsController):
 
 	def calculate_total_amount(self):
 		self.total_claimed_amount = 0
+		self.grand_total = 0
 		self.total_sanctioned_amount = 0
+		# ********** HUSAM 2023-08-13 ***************
+		self.total_taxes_and_charges = 0
+		self.total_vat = 0
+		# ********** HUSAM 2023-08-13 ***************
 		for d in self.get("expenses"):
 			if self.approval_status == "Rejected":
 				d.sanctioned_amount = 0.0
 
-			self.total_claimed_amount += flt(d.amount)
+			self.total_claimed_amount += flt(d.amount) - flt(d.vat) # **** 2023-10-22 sub vat HUSAM
+			self.grand_total += flt(d.amount) # **** 2023-10-22 sub vat HUSAM
 			self.total_sanctioned_amount += flt(d.sanctioned_amount)
+			# ********** HUSAM 2023-08-13 ***************
+			self.total_vat += flt(d.vat)
+			# ********** HUSAM 2023-08-13 ***************
 
 	@frappe.whitelist()
 	def calculate_taxes(self):
+		# ********** HUSAM 2023-08-13 ***************
 		self.total_taxes_and_charges = 0
-		for tax in self.taxes:
-			if tax.rate:
-				tax.tax_amount = flt(self.total_sanctioned_amount) * flt(tax.rate / 100)
+		self.total_vat = 0
+		for d in self.get("expenses"):
+			self.total_vat += flt(d.vat)
+		# self.total_taxes_and_charges = 0
+		# for tax in self.taxes:
+		# 	if tax.rate:
+		# 		tax.tax_amount = flt(self.total_sanctioned_amount) * flt(tax.rate / 100)
 
-			tax.total = flt(tax.tax_amount) + flt(self.total_sanctioned_amount)
-			self.total_taxes_and_charges += flt(tax.tax_amount)
+		# 	tax.total = flt(tax.tax_amount) + flt(self.total_sanctioned_amount)
+		# 	self.total_taxes_and_charges += flt(tax.tax_amount)
+		# ********** HUSAM 2023-08-13 ***************
 
-		self.grand_total = (
-			flt(self.total_sanctioned_amount)
-			+ flt(self.total_taxes_and_charges)
-			- flt(self.total_advance_amount)
-		)
+		# self.grand_total = (
+		# 	flt(self.total_sanctioned_amount)
+		# 	#+ flt(self.total_vat)
+		# 	- flt(self.total_advance_amount)
+		# )
 
 	def validate_advances(self):
 		self.total_advance_amount = 0
@@ -313,17 +432,25 @@ class ExpenseClaim(AccountsController):
 
 		if self.total_advance_amount:
 			precision = self.precision("total_advance_amount")
+			# amount_with_taxes = flt(
+			# 	(flt(self.total_sanctioned_amount, precision) + flt(self.total_taxes_and_charges, precision)),
+			# 	precision,
+			# )
+			# **************  HUSAM 2023-10-20
 			amount_with_taxes = flt(
-				(flt(self.total_sanctioned_amount, precision) + flt(self.total_taxes_and_charges, precision)),
+				(flt(self.total_sanctioned_amount, precision) + flt(self.total_vat, precision)),
 				precision,
 			)
-
 			if flt(self.total_advance_amount, precision) > amount_with_taxes:
 				frappe.throw(_("Total advance amount cannot be greater than total sanctioned amount"))
 
 	def validate_sanctioned_amount(self):
 		for d in self.get("expenses"):
+			d.amount = round(flt(d.amount), 2)
+			d.sanctioned_amount = round(flt(d.sanctioned_amount),2)
 			if flt(d.sanctioned_amount) > flt(d.amount):
+				frappe.errprint('Sanctioned Amount: '+ str(flt(d.sanctioned_amount)))
+				frappe.errprint('Amount: '+ str(flt(d.amount)))
 				frappe.throw(
 					_("Sanctioned Amount cannot be greater than Claim Amount in Row {0}.").format(d.idx)
 				)
@@ -370,7 +497,7 @@ def get_outstanding_amount_for_claim(claim):
 			claim,
 			(
 				"total_sanctioned_amount",
-				"total_taxes_and_charges",
+				"total_vat", # changed taxes_and_charges to vat
 				"total_amount_reimbursed",
 				"total_advance_amount",
 			),
@@ -379,7 +506,7 @@ def get_outstanding_amount_for_claim(claim):
 
 	outstanding_amt = (
 		flt(claim.total_sanctioned_amount)
-		+ flt(claim.total_taxes_and_charges)
+		+ flt(claim.total_vat)# changed taxes_and_charges to vat
 		- flt(claim.total_amount_reimbursed)
 		- flt(claim.total_advance_amount)
 	)
@@ -435,7 +562,6 @@ def make_bank_entry(dt, dn):
 def get_expense_claim_account_and_cost_center(expense_claim_type, company):
 	data = get_expense_claim_account(expense_claim_type, company)
 	cost_center = erpnext.get_default_cost_center(company)
-
 	return {"account": data.get("account"), "cost_center": cost_center}
 
 
@@ -551,3 +677,4 @@ def make_expense_claim_for_delivery_trip(source_name, target_doc=None):
 	)
 
 	return doc
+

@@ -21,12 +21,12 @@
   "sb1",
   "taxes",
   "transactions_section",
-  "total_sanctioned_amount",
+  "total_claimed_amount",
   "total_taxes_and_charges",
   "total_advance_amount",
   "column_break_17",
   "grand_total",
-  "total_claimed_amount",
+  "total_sanctioned_amount",
   "total_amount_reimbursed",
   "section_break_16",
   "posting_date",
@@ -283,6 +283,7 @@
    "label": "More Details"
   },
   {
+   "allow_on_submit": 1,
    "default": "Draft",
    "fieldname": "status",
    "fieldtype": "Select",
@@ -352,7 +353,7 @@
    "fieldname": "grand_total",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Grand Total",
+   "label": "Total",
    "options": "Company:company:default_currency",
    "read_only": 1
   },
@@ -379,7 +380,7 @@
  "idx": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2021-11-22 16:26:57.787838",
+ "modified": "2023-10-22 20:05:44.053171",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Expense Claim",
@@ -445,6 +446,7 @@
  "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
+ "states": [],
  "timeline_field": "employee",
  "title_field": "title"
 }

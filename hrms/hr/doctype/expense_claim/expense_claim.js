@@ -62,8 +62,8 @@ frappe.ui.form.on('Expense Claim Detail', {
 	}
 });
 
-cur_frm.add_fetch('employee', 'company', 'company');
-cur_frm.add_fetch('employee','employee_name','employee_name');
+cur_frm.add_fetch('employee', 'company', 'company', 'Expense Claim'); //**************************************** */
+cur_frm.add_fetch('employee','employee_name','employee_name', 'Expense Claim');
 cur_frm.add_fetch('expense_type','description','description');
 
 cur_frm.cscript.onload = function(doc) {
@@ -131,10 +131,14 @@ cur_frm.cscript.validate = function(doc) {
 cur_frm.cscript.calculate_total = function(doc){
 	doc.total_claimed_amount = 0;
 	doc.total_sanctioned_amount = 0;
+	doc.total_vat = 0; // ********* HUSAM 2023-09-13 ************************
+	doc.grand_total = 0;
 	$.each((doc.expenses || []), function(i, d) {
-		doc.total_claimed_amount += d.amount;
+		doc.total_claimed_amount += d.amount - d.vat; // ******* HUSAM 2023-10-22 REDUCED VAT DUE TO BUG IN PAYMENT ENTRY ******
 		doc.total_sanctioned_amount += d.sanctioned_amount;
+		doc.total_vat += d.vat; // ********* HUSAM 2023-09-13 ************************
 	});
+	doc.grand_total = doc.total_claimed_amount + doc.total_vat;
 };
 
 cur_frm.cscript.calculate_total_amount = function(doc,cdt,cdn){
@@ -197,12 +201,12 @@ frappe.ui.form.on("Expense Claim", {
 
 		frm.set_query("payable_account", function() {
 			return {
-				filters: {
-					"report_type": "Balance Sheet",
-					"account_type": "Payable",
-					"company": frm.doc.company,
-					"is_group": 0
-				}
+				filters: [
+					["report_type", "=", "Balance Sheet"],
+					['account_type', 'in', ["Payable","Bank"]], //"account_type": "Payable", Changed 2023-09-06 HUSAM ************
+					["company", "=", frm.doc.company],
+					["is_group", "=", 0]
+				]
 			};
 		});
 
@@ -224,7 +228,7 @@ frappe.ui.form.on("Expense Claim", {
 	onload: function(frm) {
 		if (frm.doc.docstatus == 0) {
 			return frappe.call({
-				method: "hrms.hr.doctype.leave_application.leave_application.get_mandatory_approval",
+				method: "nest_qcs.nest_override.nest_leave_application.get_mandatory_approval",
 				args: {
 					doctype: frm.doc.doctype,
 				},
@@ -236,6 +240,13 @@ frappe.ui.form.on("Expense Claim", {
 			});
 		}
 	},
+
+	before_save: function(frm) {
+		if (frm.doc.credit_card) {
+			frm.doc.title = "Credit Card ("+frm.doc.employee+")"
+		}
+	},
+	
 
 	refresh: function(frm) {
 		frm.trigger("toggle_fields");
@@ -265,7 +276,16 @@ frappe.ui.form.on("Expense Claim", {
 	},
 
 	calculate_grand_total: function(frm) {
-		var grand_total = flt(frm.doc.total_sanctioned_amount) + flt(frm.doc.total_taxes_and_charges) - flt(frm.doc.total_advance_amount);
+// ************************ HUSAM 202-09-06 ******************************************************************************************
+//		var grand_total = flt(frm.doc.total_sanctioned_amount) + flt(frm.doc.total_taxes_and_charges) - flt(frm.doc.total_advance_amount);
+//		var grand_total = flt(frm.doc.total_claimed_amount) + flt(frm.doc.total_taxes_and_charges) - flt(frm.doc.total_advance_amount);
+		var grand_total = flt(frm.doc.total_claimed_amount) + flt(frm.doc.total_vat) - flt(frm.doc.total_advance_amount);
+		// console.log('Calculate Grand Total')
+		// console.log('Claimed: '+frm.doc.total_claimed_amount);
+		// console.log('Taxes : '+frm.doc.total_taxes_and_charges);
+		// console.log('Advances : '+frm.doc.total_advance_amount);
+
+// ************************ HUSAM 202-09-06 ******************************************************************************************
 		frm.set_value("grand_total", grand_total);
 		frm.refresh_fields();
 	},
@@ -323,7 +343,13 @@ frappe.ui.form.on("Expense Claim", {
 	},
 
 	employee: function(frm) {
+		// ************** HUSAM 2023-08-15 ************************
+		frm.add_fetch("company", "cost_center", "cost_center");
+		frm.add_fetch("company", "default_expense_claim_payable_account", "payable_account");
+		// ************** HUSAM 2023-08-15 ************************
+		
 		frm.events.get_advances(frm);
+
 	},
 
 	cost_center: function(frm) {
@@ -387,16 +413,50 @@ frappe.ui.form.on("Expense Claim Detail", {
 		var child = locals[cdt][cdn];
 		frappe.model.set_value(cdt, cdn, 'sanctioned_amount', child.amount);
 	},
+// *************  ADDED 2023-10-20 HUSAM ***********************************************************
+	// employee: function(frm, cdt, cdn) {
+	// 	var child = locals[cdt][cdn];
+	// 	employee =  child.employee;
+	// 	if ((employee || '').length >3) {
+	// 		console.log('new call to server for '+ employee);
+	// 		let employee_cost_center = '';
+	// 		frappe.call({
+	// 			method: 'nest_qcs.common.get_employee_cost_centers',
+	// 			args: {
+	// 				"employee": employee,
+	// 			},
+	// 			callback: function(r) {
+	// 				employee_cost_center = Object.keys(r.message)[0];
+	// 				console.log('Employee: ' + employee + ', FOUND CC: ' + employee_cost_center);
+	// 				child.cost_center = employee_cost_center;
+	// 			}
+	// 		});
+	// 	}	        
+	// },	
+// *************  ADDED 2023-10-20 HUSAM ***********************************************************
+
+//******************* HUSAM 2023-08-13 ****************************************** */
+	subtotal: function(frm, cdt, cdn) {
+		var child = locals[cdt][cdn];
+		frappe.model.set_value(cdt, cdn, 'amount', child.subtotal + child.vat);
+		frappe.model.set_value(cdt, cdn, 'sanctioned_amount', child.subtotal + child.vat);
+	},
+	vat: function(frm, cdt, cdn) {
+		var child = locals[cdt][cdn];
+		frappe.model.set_value(cdt, cdn, 'amount', child.subtotal + child.vat);
+		frappe.model.set_value(cdt, cdn, 'sanctioned_amount', child.subtotal + child.vat);
+	},
+	//******************* HUSAM 2023-08-13 ****************************************** */
 
 	sanctioned_amount: function(frm, cdt, cdn) {
-		cur_frm.cscript.calculate_total(frm.doc, cdt, cdn);
-		frm.trigger("get_taxes");
-		frm.trigger("calculate_grand_total");
-	},
+			cur_frm.cscript.calculate_total(frm.doc, cdt, cdn);
+			frm.trigger("get_taxes");
+			frm.trigger("calculate_grand_total");
+		},
 
 	cost_center: function(frm, cdt, cdn) {
-		erpnext.utils.copy_value_in_all_rows(frm.doc, cdt, cdn, "expenses", "cost_center");
-	}
+			erpnext.utils.copy_value_in_all_rows(frm.doc, cdt, cdn, "expenses", "cost_center");
+		}
 });
 
 frappe.ui.form.on("Expense Claim Advance", {

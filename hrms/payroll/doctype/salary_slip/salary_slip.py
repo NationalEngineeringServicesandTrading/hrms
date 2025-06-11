@@ -55,7 +55,11 @@ from hrms.payroll.doctype.payroll_period.payroll_period import (
 class SalarySlip(TransactionBase):
 	def __init__(self, *args, **kwargs):
 		super(SalarySlip, self).__init__(*args, **kwargs)
-		self.series = "Sal Slip/{0}/.#####".format(self.employee)
+		# ************************************************  MODIFIED ON 2021-12-16  ***************************************************
+		# self.series = 'Sal Slip/{0}/.#####'.format(self.employee)
+		self.series = 'SS/{0}/.YYYY./.MM./.#'.format(self.employee)
+		# SS2009/YYYY/MM/#
+		# ************************************************  MODIFIED ON 2021-12-16  ***************************************************
 		self.whitelisted_globals = {
 			"int": int,
 			"float": float,

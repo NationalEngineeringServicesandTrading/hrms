@@ -38,6 +38,7 @@ frappe.ui.form.on("Leave Application", {
 				}
 			});
 		}
+		frm.trigger("hide_include"); //***********************************   ADDED LINES 2021 - 12 - 01   *************************************/
 	},
 
 	validate: function(frm) {
@@ -96,6 +97,8 @@ frappe.ui.form.on("Leave Application", {
 	refresh: function(frm) {
 		if (frm.is_new()) {
 			frm.trigger("calculate_total_days");
+			frm.trigger("calculate_projected_days"); //***********************************   ADDED LINES 2021 - 10 - 25   *************************************/
+			frm.trigger("hide_include"); //***********************************   ADDED LINES 2021 - 10 - 26   *************************************/
 		}
 		cur_frm.set_intro("");
 		if (frm.doc.__islocal && !in_list(frappe.user_roles, "Employee")) {
@@ -113,7 +116,10 @@ frappe.ui.form.on("Leave Application", {
 	employee: function(frm) {
 		frm.trigger("make_dashboard");
 		frm.trigger("get_leave_balance");
-		frm.trigger("set_leave_approver");
+		// frm.trigger("set_leave_approver");
+		frm.trigger("calculate_projected_days"); //***********************************   ADDED LINES 2022 - 08 - 09   *************************************/
+		frm.trigger("hide_include"); //***********************************   ADDED LINES 2022 - 08 - 09   *************************************/
+
 	},
 
 	leave_approver: function(frm) {
@@ -137,22 +143,29 @@ frappe.ui.form.on("Leave Application", {
 			frm.set_value("half_day_date", "");
 		}
 		frm.trigger("calculate_total_days");
+		frm.trigger("calculate_projected_days"); //***********************************   ADDED LINES 2021 - 10 - 25   *************************************/
+		frm.trigger("hide_include"); //***********************************   ADDED LINES 2021 - 10 - 26   *************************************/
 	},
-
 	from_date: function(frm) {
 		frm.trigger("make_dashboard");
 		frm.trigger("half_day_datepicker");
 		frm.trigger("calculate_total_days");
+		frm.trigger("calculate_projected_days"); //***********************************   ADDED LINES 2021 - 10 - 25   *************************************/
+		frm.trigger("hide_include"); //***********************************   ADDED LINES 2021 - 10 - 26   *************************************/
 	},
 
 	to_date: function(frm) {
 		frm.trigger("make_dashboard");
 		frm.trigger("half_day_datepicker");
 		frm.trigger("calculate_total_days");
+		frm.trigger("calculate_projected_days"); //***********************************   ADDED LINES 2021 - 10 - 25   *************************************/
+		frm.trigger("hide_include"); //***********************************   ADDED LINES 2021 - 10 - 26   *************************************/
 	},
 
 	half_day_date(frm) {
 		frm.trigger("calculate_total_days");
+		frm.trigger("calculate_projected_days"); //***********************************   ADDED LINES 2021 - 10 - 25   *************************************/
+		frm.trigger("hide_include"); //***********************************   ADDED LINES 2021 - 10 - 26   *************************************/
 	},
 
 	half_day_datepicker: function(frm) {
@@ -217,12 +230,58 @@ frappe.ui.form.on("Leave Application", {
 			});
 		}
 	},
+	//********************************************************************************   ADDED LINES 2021 - 10 - 25   ***************************************************/
+	calculate_projected_days: function(frm) {
+		if(frm.doc.from_date && frm.doc.to_date && frm.doc.employee && frm.doc.leave_type) {
+
+			var from_date = Date.parse(frm.doc.from_date);
+			var to_date = Date.parse(frm.doc.to_date);
+
+			return frappe.call({
+				method: 'nest_qcs.nest_override.nest_leave_application.get_projected_leave_days',
+				args: {
+					"employee": frm.doc.employee,
+					"leave_type": frm.doc.leave_type,
+					"from_date": frm.doc.from_date,
+					"to_date": frm.doc.to_date,
+					"half_day": frm.doc.half_day,
+					"half_day_date": frm.doc.half_day_date,
+				},
+				callback: function(r) {
+					if (r && r.message) {
+						frm.set_value('projected_leave_balance', r.message);
+					}
+				}
+			});
+		}
+	},
+
+	hide_include: function(frm) {
+		if(frm.doc.from_date && frm.doc.to_date && frm.doc.employee && frm.doc.leave_type) {
+
+			// Set the MINIMUM Number of Days to Unhide the "Include all leave salary and airfare dues with next payment" Check Box.
+			var min_days = 14;  // <-------------------------------------------------------------------------------
+
+			var from_date = Date.parse(frm.doc.from_date);
+			var to_date = Date.parse(frm.doc.to_date);
+			if((to_date - from_date) > (min_days-2)*24*60*60*1000){
+				frm.set_df_property('include_all_leave_salary_and_airfare_dues_with_next_payment', 'hidden', 0);
+				return;
+			} else {
+				frm.set_value('include_all_leave_salary_and_airfare_dues_with_next_payment', 0);
+				frm.set_df_property('include_all_leave_salary_and_airfare_dues_with_next_payment', 'hidden', 1);
+				return;
+			}
+		}
+	},
+//********************************************************************************   ADDED LINES 2021 - 10 - 25   ***************************************************/
+
 
 	set_leave_approver: function(frm) {
 		if (frm.doc.employee) {
 			// server call is done to include holidays in leave days calculations
 			return frappe.call({
-				method: 'hrms.hr.doctype.leave_application.leave_application.get_leave_approver',
+				method: 'nest_qcs.nest_override.nest_leave_application.get_leave_approver',
 				args: {
 					"employee": frm.doc.employee,
 				},

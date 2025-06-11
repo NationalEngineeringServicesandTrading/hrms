@@ -42,6 +42,8 @@ frappe.ui.form.on('Payroll Entry', {
 	refresh: function (frm) {
 		if (frm.doc.docstatus === 0 && !frm.is_new()) {
 			frm.page.clear_primary_action();
+			console.log('SHOULD Show Get Employees Button'); /******************************** */
+			console.log(frm.doc.employees)
 			frm.add_custom_button(__("Get Employees"),
 				function() {
 					frm.events.get_employee_details(frm);
@@ -58,6 +60,7 @@ frappe.ui.form.on('Payroll Entry', {
 			if (frm.doc.docstatus == 0) {
 				frm.page.clear_primary_action();
 				frm.page.set_primary_action(__("Create Salary Slips"), () => {
+					console.log("payroll_entry.js.Create Salary Slips Button Pressed")
 					frm.save("Submit").then(() => {
 						frm.page.clear_primary_action();
 						frm.refresh();
@@ -137,7 +140,9 @@ frappe.ui.form.on('Payroll Entry', {
 	add_context_buttons: function (frm) {
 		if (frm.doc.salary_slips_submitted || (frm.doc.__onload && frm.doc.__onload.submitted_ss)) {
 			frm.events.add_bank_entry_button(frm);
+			console.log('BANK ENTRY'); /*****************************************************************/
 		} else if (frm.doc.salary_slips_created && frm.doc.status != 'Queued') {
+			console.log('SHOULD ADD BUTTON'); /**************************************************************/ 
 			frm.add_custom_button(__("Submit Salary Slip"), function () {
 				submit_salary_slip(frm);
 			}).addClass("btn-primary");
@@ -153,9 +158,11 @@ frappe.ui.form.on('Payroll Entry', {
 			},
 			callback: function (r) {
 				if (r.message && !r.message.submitted) {
+					/*
 					frm.add_custom_button(__("Make Bank Entry"), function () {
 						make_bank_entry(frm);
 					}).addClass("btn-primary");
+					*/
 				}
 			}
 		});
